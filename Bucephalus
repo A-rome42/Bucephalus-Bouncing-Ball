@@ -1,0 +1,134 @@
+#include <Adafruit_CircuitPlayground.h>
+#include <AsyncDelay.h>
+
+int capBase;
+float pi = 3.14;
+
+volatile bool buttFlag4 = false;          //FLAGS
+volatile bool buttFlag5 = false;
+volatile bool switchFlag = false;
+unsigned long zeroTime;
+
+int time;
+int score;
+bool direction;
+bool playing;
+
+int speed = 2000;
+
+void setup() {
+  Serial.begin(9600);
+  CircuitPlayground.begin();
+
+  capBase = CircuitPlayground.readCap(3);
+  switchFlag = digitalRead(7);
+  attachInterrupt(digitalPinToInterrupt(7), sFlag, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(4), bFlag4, FALLING);
+  attachInterrupt(digitalPinToInterrupt(5), bFlag5, FALLING); 
+}
+
+void sFlag() { switchFlag = digitalRead(7); }
+void bFlag4() { buttFlag4 = true; }
+void bFlag5() { buttFlag5 = true; }  // interupts
+
+
+    
+    // this is called every time a button is pressed, it updates the bounce speed and checks if the game is over
+bool manageTimer() 
+{
+  unsigned long elapsed = millis() - zeroTime;
+  if (elapsed > 250) 
+  {
+    long difference = abs(time - (long) elapsed); 
+    time = time - difference;
+    if (time <= 0) { 
+      endGame();
+      return false; 
+    }
+
+    zeroTime = millis();
+    //tone(A0, 300, 20);
+    return true;
+  }
+}
+
+
+
+void loop() {
+  if (switchFlag) {
+    switchFlag = false;
+    playing = true;
+    time = speed;
+    zeroTime = millis();
+    score = 1;
+    arcCC();
+  }
+
+  if (playing && (buttFlag4 || buttFlag5)) {         //ChatGPT helped to clean up this function, although it took some modification to make it work
+    if (manageTimer()) {
+      if (buttFlag4) {
+        buttFlag4 = false;
+        arcC();
+      } else if (buttFlag5) {
+        buttFlag5 = false;
+        arcCC();
+      }
+    }
+  }
+}
+
+
+void arcCC() 
+{
+  unsigned long pressTime = millis();
+  direction = false;
+  for (int i = 0; i < 10; i++) {
+    while (millis() - pressTime < (i + 1) * (time / 10)) {
+      if (buttFlag4 || buttFlag5) { break; }
+    }
+      CircuitPlayground.setPixelColor(i, CircuitPlayground.colorWheel(20));
+      CircuitPlayground.setPixelColor(i - 2, 0, 0, 0);
+  }
+  CircuitPlayground.clearPixels();
+  score += 1;
+}
+
+void arcC() 
+{
+  unsigned long pressTime = millis();
+  direction = true;
+  for (int i = 9; i >= 0; i--) {
+    while (millis() - pressTime < (10 - i) * (time / 10)) {
+      if (buttFlag4 || buttFlag5) { break; }
+    }
+      CircuitPlayground.setPixelColor(i, CircuitPlayground.colorWheel(20));
+      CircuitPlayground.setPixelColor(i + 2, 0, 0, 0);
+  }
+  CircuitPlayground.clearPixels();
+  score += 1;
+}
+
+void endGame() 
+{
+  playing = false;
+  Serial.print("\nYour score was ");
+  Serial.print(score);
+  loading(30);
+  time = speed;
+  score = 0;
+}
+
+void loading(int speed) {
+  for (int i = 0; i < 10; i++) {
+    if (i < 5) {
+      CircuitPlayground.setPixelColor(i, 200, 200, 200);
+      CircuitPlayground.setPixelColor(5 + i, 200, 200, 200);
+      delay(1000/speed);
+    } else {
+      CircuitPlayground.setPixelColor(i - 5, 0, 0, 0);
+      CircuitPlayground.setPixelColor(i, 0, 0, 0);
+      delay(1000/speed);
+    } 
+  }
+  delay(500);
+}
