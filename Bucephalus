@@ -1,70 +1,70 @@
 #include <Adafruit_CircuitPlayground.h>
-#include <AsyncDelay.h>
 
-int capBase;
-float pi = 3.14;
-
-volatile bool buttFlag4 = false;          //FLAGS
+volatile bool buttFlag4 = false;                                //FLAGS
 volatile bool buttFlag5 = false;
 volatile bool switchFlag = false;
 unsigned long zeroTime;
 
-int time;
-int score;
+int time;                                                           //global variables
+int score;          
 bool direction;
 bool playing;
-
+bool quickTime = false;
+int qtThreshhold;
 int speed = 2000;
 
 void setup() {
   Serial.begin(9600);
-  CircuitPlayground.begin();
+  CircuitPlayground.begin();                 
+  randomSeed(analogRead(3));
+  CircuitPlayground.setAccelTap(1, 10);
 
-  capBase = CircuitPlayground.readCap(3);
   switchFlag = digitalRead(7);
-  attachInterrupt(digitalPinToInterrupt(7), sFlag, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(4), bFlag4, FALLING);
-  attachInterrupt(digitalPinToInterrupt(5), bFlag5, FALLING); 
+  attachInterrupt(digitalPinToInterrupt(7), sFlag, CHANGE);                  //Assigning interupts
+  attachInterrupt(digitalPinToInterrupt(4), bFlag4, FALLING);         
+  attachInterrupt(digitalPinToInterrupt(5), bFlag5, FALLING);
+  attachInterrupt(digitalPinToInterrupt(CPLAY_LIS3DH_INTERRUPT), readTap, FALLING); 
+  CircuitPlayground.setAccelRange(LIS3DH_RANGE_8_G); 
 }
 
-void sFlag() { switchFlag = digitalRead(7); }
-void bFlag4() { buttFlag4 = true; }
-void bFlag5() { buttFlag5 = true; }  // interupts
-
-
-    
-    // this is called every time a button is pressed, it updates the bounce speed and checks if the game is over
-bool manageTimer() 
-{
-  unsigned long elapsed = millis() - zeroTime;
-  if (elapsed > 250) 
-  {
-    long difference = abs(time - (long) elapsed); 
-    time = time - difference;
-    if (time <= 0) { 
-      endGame();
-      return false; 
-    }
-
-    zeroTime = millis();
-    //tone(A0, 300, 20);
-    return true;
+void sFlag() {
+  switchFlag = digitalRead(7);
+}
+void bFlag4() {
+  buttFlag4 = true;
+}
+void bFlag5() {                                               //ISRs
+  buttFlag5 = true;
+}  
+//when the board shook, this checks to see if a quick time event is active...
+//if it is, time gets increased and a message is printed.
+void readTap() { 
+  if (quickTime) {                 
+    quickTime = false;
+    time += 300;
+    Serial.println("\nCLINCHED!! YOU HAVE GAINED TIME!");
   }
 }
-
 
 
 void loop() {
   if (switchFlag) {
+    //stuff that happens at the beginning of the game
     switchFlag = false;
-    playing = true;
+    playing = true;           
     time = speed;
+    qtThreshhold = 0;
     zeroTime = millis();
-    score = 1;
     arcCC();
   }
-
-  if (playing && (buttFlag4 || buttFlag5)) {         //ChatGPT helped to clean up this function, although it took some modification to make it work
+  //if no quicktime event is active, it decides if one should be
+  if (!quickTime) {
+    quickTimeCheck();                  
+  } 
+  //ChatGPT helped to clean up this function, although it took some modification to make it work
+  //checks to see if flags are up, and then modifies the timing of the game with manageTimer, and 
+  // plays the corresponding animation
+  if (playing && (buttFlag4 || buttFlag5)) {  
     if (manageTimer()) {
       if (buttFlag4) {
         buttFlag4 = false;
@@ -77,58 +77,90 @@ void loop() {
   }
 }
 
-
-void arcCC() 
+// this is called every time a button is pressed, it updates the bounce speed and checks if the game is over
+bool manageTimer() {
+  unsigned long elapsed = millis() - zeroTime;
+  if (elapsed > 250) {
+    long difference = abs(time - (long)elapsed);
+    time -= 0.8*difference;
+    if (time <= 0) {
+      endGame();
+      return false;
+    }
+    zeroTime = millis();
+    if (quickTime) { quickTime = false; }
+      tone(A0, 300, 20);
+    score += 1;
+    return true;
+  }
+}
+// an interval combined with some randomness decides when quickTime events should happen.
+void quickTimeCheck() {
+  byte randSpin = random(0, 3);
+  if (score > qtThreshhold + 4 && randSpin == 2) {
+    quickTime = true;
+    qtThreshhold = score;
+    for (int i = 0; i < 9; i++) {
+      CircuitPlayground.setPixelColor(i, 250, 0, 250);
+    }
+  }
+}
+//These functions animate the  LEDs. they are the same, just backwards from eachother
+void arcCC()  
 {
   unsigned long pressTime = millis();
   direction = false;
   for (int i = 0; i < 10; i++) {
-    while (millis() - pressTime < (i + 1) * (time / 10)) {
-      if (buttFlag4 || buttFlag5) { break; }
+    while (millis() - pressTime < (i + 1) * (time / 10)) {     //this while loop dictates the speed of the bouncing...
+      if (buttFlag4 || buttFlag5) {                            //light based on the global variable time
+        CircuitPlayground.clearPixels();
+        return;
+      }
     }
-      CircuitPlayground.setPixelColor(i, CircuitPlayground.colorWheel(20));
-      CircuitPlayground.setPixelColor(i - 2, 0, 0, 0);
+    CircuitPlayground.setPixelColor(i, CircuitPlayground.colorWheel(60));
+    CircuitPlayground.setPixelColor(i - 2, 0, 0, 0);
   }
   CircuitPlayground.clearPixels();
-  score += 1;
 }
 
-void arcC() 
-{
+void arcC() {
   unsigned long pressTime = millis();
   direction = true;
   for (int i = 9; i >= 0; i--) {
     while (millis() - pressTime < (10 - i) * (time / 10)) {
-      if (buttFlag4 || buttFlag5) { break; }
+      if (buttFlag4 || buttFlag5) {
+        CircuitPlayground.clearPixels();
+        return;
+      }
     }
-      CircuitPlayground.setPixelColor(i, CircuitPlayground.colorWheel(20));
-      CircuitPlayground.setPixelColor(i + 2, 0, 0, 0);
+    CircuitPlayground.setPixelColor(i, CircuitPlayground.colorWheel(60));
+    CircuitPlayground.setPixelColor(i + 2, 0, 0, 0);
   }
   CircuitPlayground.clearPixels();
-  score += 1;
 }
-
-void endGame() 
-{
+//runs at the end of the game
+void endGame() {
   playing = false;
   Serial.print("\nYour score was ");
   Serial.print(score);
-  loading(30);
+  loading(50);
   time = speed;
   score = 0;
 }
-
+//animation and audio for the end of the game
 void loading(int speed) {
   for (int i = 0; i < 10; i++) {
     if (i < 5) {
-      CircuitPlayground.setPixelColor(i, 200, 200, 200);
-      CircuitPlayground.setPixelColor(5 + i, 200, 200, 200);
-      delay(1000/speed);
+      CircuitPlayground.setPixelColor(i, 200, 0, 0);
+      CircuitPlayground.setPixelColor(5 + i, 200, 0, 0);
+      delay(1000 / speed);
     } else {
       CircuitPlayground.setPixelColor(i - 5, 0, 0, 0);
       CircuitPlayground.setPixelColor(i, 0, 0, 0);
-      delay(1000/speed);
-    } 
+      delay(1000 / speed);
+    }
+    tone(A0, 2500 - 200*i);
   }
+  tone(A0, 0);
   delay(500);
 }
